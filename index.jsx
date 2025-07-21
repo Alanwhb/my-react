@@ -66,17 +66,39 @@ function createDom(fiber) {
   return dom;
 }
 
+// recursively append all the nodes to the DOM
+function commitRoot() {
+  commitWork(wipRoot);
+  wipRoot = null;
+}
+
+function commitWork(fiber) {
+  if (!fiber) {
+    return;
+  }
+  const domParent = fiber.parent.dom;
+  domParent.appendChild(fiber.dom);
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
+}
+
 function render(element, container) { 
-  nextUnitOfWork = {
+  wipRoot = {
     dom: container,
     props: {
       children: [element],
     },
   };
+
+  nextUnitOfWork = wipRoot;
 }
 
 // 下次要执行的渲染任务
 let nextUnitOfWork = null;
+
+// the work in progress root 
+let wipRoot = null;
+
 // 将整个渲染过程从同步改成分片防止阻塞主线程
 function workLoop(deadline) { 
   let shouldYield = false;
@@ -84,6 +106,12 @@ function workLoop(deadline) {
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
     shouldYield = deadline.timeRemaining() < 1;
   }
+
+  // finished all work
+  if (!nextUnitOfWork && wipRoot) {
+    commitRoot();
+  }
+
   requestIdleCallback(workLoop);
 }
 
@@ -94,9 +122,10 @@ function performUnitOfWork(fiber) {
   if (!fiber.dom) {
     fiber.dom = createDom(fiber);
   }
-  if (fiber.parent) {
-    fiber.parent.dom.appendChild(fiber.dom);
-  }
+  // 防止页面出现渲染一半的节点，到commit时再统一添加dom节点
+  // if (fiber.parent) {
+  //   fiber.parent.dom.appendChild(fiber.dom);
+  // }
 
   // 2. create new fibers - children fibers
   const elements = fiber.props.children;
