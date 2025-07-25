@@ -96,8 +96,8 @@ function updateDom(dom, prevProps, nextProps) {
     .filter(isGone(prevProps, nextProps))
     .forEach(name => {
       dom[name] = ""
-    })
-​
+    });
+
   // Set new or changed properties
   Object.keys(nextProps)
     .filter(isProperty)
@@ -134,6 +134,13 @@ function commitWork(fiber) {
   if (!fiber) {
     return;
   }
+
+   // 根节点不需要处理 DOM 操作
+   if (fiber === wipRoot) {
+    commitWork(fiber.child);
+    return;
+  }
+
   const domParent = fiber.parent.dom;
 
   if (fiber.effectTag === "PLACEMENT" && fiber.dom != null) {
@@ -267,7 +274,7 @@ function reconcileChildren(wipFiber, elements) {
       oldFiber = oldFiber.sibling;
     }
     if (index === 0) {
-      fiber.child = newFiber;
+      wipFiber.child = newFiber;
     } else if (element) {
       prevSibling.sibling = newFiber;
     }
