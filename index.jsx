@@ -27,6 +27,8 @@ container.appendChild(node)
 
 // myReact - 创建节点
 function createElement(type, props, ...children) {
+  console.log("createElement ", type, ", props:", props, ", children:", children)
+
   return {
     type,
     props: {
@@ -141,19 +143,32 @@ function commitWork(fiber) {
     return;
   }
 
-  const domParent = fiber.parent.dom;
+  let domParentFiber = fiber.parent;
+  // function组件的fiber本身不含dom，需要向上查找到真正能够操作的祖先dom
+  while (!domParentFiber.dom) {
+    domParentFiber = domParentFiber.parent;
+  }
+  const domParent = domParentFiber.dom;
 
   if (fiber.effectTag === "PLACEMENT" && fiber.dom != null) {
     domParent.appendChild(fiber.dom);
   } else if (fiber.effectTag === "UPDATE" && fiber.dom != null) {
     updateDom(fiber.dom, fiber.alternate.props, fiber.props);
   } else if (fiber.effectTag === "DELETION") {
-    domParent.removeChild(fiber.dom);
+    commitDeletion(fiber, domParent);
   }
 
-  domParent.appendChild(fiber.dom);
   commitWork(fiber.child);
   commitWork(fiber.sibling);
+}
+
+// when removing a node we also need to keep going until we find a child with a DOM node.
+function commitDeletion(fiber, domParent) {
+  if (fiber.dom) {
+    domParent.removeChild(fiber.dom);
+  } else {
+    commitDeletion(fiber.child, domParent);
+  }
 }
 
 function render(element, container) { 
@@ -201,18 +216,12 @@ function workLoop(deadline) {
 requestIdleCallback(workLoop);
 
 function performUnitOfWork(fiber) { 
-  // 1. add dom node
-  if (!fiber.dom) {
-    fiber.dom = createDom(fiber);
+  const isFunctionComponent = fiber.type instanceof Function;
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber);
+  } else {
+    updateHostComponent(fiber);
   }
-  // 防止页面出现渲染一半的节点，到commit时再统一添加dom节点
-  // if (fiber.parent) {
-  //   fiber.parent.dom.appendChild(fiber.dom);
-  // }
-
-  // 2. create new fibers - children fibers
-  const elements = fiber.props.children;
-  reconcileChildren(fiber, elements);
 
   // 3. return next unit of work - child -> sibling -> uncle(parent's silbling)
   if (fiber.child) {
@@ -225,6 +234,22 @@ function performUnitOfWork(fiber) {
     }
     nextFiber = nextFiber.parent;
   }
+}
+
+// 处理函数组件
+function updateFunctionComponent(fiber) {
+  const children = [fiber.type(fiber.props)];
+  reconcileChildren(fiber, children);
+}
+
+// 处理原生组件
+function updateHostComponent(fiber) {
+  // 1. add dom node
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber)
+  }
+  // 2. create new fibers - children fibers
+  reconcileChildren(fiber, fiber.props.children)
 }
 
 // 为当前fiber的子元素创建fiber，
@@ -289,13 +314,21 @@ const Didact = {
   render,
 };
 
+// /** @jsx Didact.createElement */
+// const element = (
+//   <div id="foo">
+//     <a>bar</a>
+//     <b />
+//   </div>
+// );
+// const container = document.getElementById("root");
+// // ReactDOM.render(element, container);
+// Didact.render(element, container); // use my React
+
 /** @jsx Didact.createElement */
-const element = (
-  <div id="foo">
-    <a>bar</a>
-    <b />
-  </div>
-);
-const container = document.getElementById("root");
-// ReactDOM.render(element, container);
-Didact.render(element, container); // use my React
+function App(props) {
+  return <h1>Hi {props.name}</h1>
+}
+const element = <App name="foo" />
+const container = document.getElementById("root")
+Didact.render(element, container)
